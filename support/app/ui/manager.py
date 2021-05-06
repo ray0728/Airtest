@@ -26,8 +26,6 @@ class UIManager:
         return height,width
     def __saveCropScreen(self, screen, x, y, width, height, page, index):
         cropscreen = aircv.crop_image(screen, [x,y,x+width,y+height])
-        if(uic.isBlank(cropscreen)):
-            return None
         path = self.datapath
         for dir in page.split('-'):
             path = os.path.join(path, dir)
@@ -37,38 +35,49 @@ class UIManager:
         aircv.imwrite(path, cropscreen, ST.SNAPSHOT_QUALITY, ST.IMAGE_MAXSIZE)
         return path
     
-    def _parseFreezeLayout(self, page, index, elementsArray):
-        sleep(5.0)
-        screen_width, screen_height = self.__getScreenSize()
-        freeze = self.poco.freeze()
-        screen = G.DEVICE.snapshot(os.path.join(self.datapath, "snap.jpg"))
-        for item in freeze().offspring():
-            attrs = self.getUseableAttrs(item)
-            if(attrs):
-                width = item.attr('size')[0] * screen_width
-                height = item.attr('size')[1] * screen_height
-                anchorX = item.attr('anchorPoint')[0] * width
-                anchorY = item.attr('anchorPoint')[1] * height
-                x0 = (item.attr('pos')[0] * screen_width) - anchorX
-                y0 = (item.attr('pos')[1] * screen_height) - anchorY
-                path = self.__saveCropScreen(screen, x0, y0, width, height, page, index)
-                if(path is None):
-                    continue
-                emt = Elements(item.attr('type'),item.attr('name'), attrs, path, similarity)
-                if emt not in elementsArray:
-                    emt.setPos(x0, y0)
-                    elementsArray.append(emt)
-                    index += 1
-                else:
-                    os.remove(path)
-        return index
     def parseLayout(self, page):
-        emtArray = []
-        itemsCount = len(emtArray)
-        index = self._parseFreezeLayout(page, 0, emtArray)
+        index = 1
+        last_px = 0
+        last_py = 0
+        last_width = 0
+        last_height = 0
+        last_path = None
         screen_width, screen_height = self.__getScreenSize()
-        while(len(emtArray) > itemsCount):
-            itemsCount = len(emtArray)
-            x, y = emtArray[-1].getPos()
+        swipe_offset_y = -0.05
+        elementsArray = []
+        newItem = 0
+        while(True):
+            sleep(3)
+            newItem = 0
+            freeze = self.poco.freeze()
+            screen = G.DEVICE.snapshot(os.path.join(self.datapath, "snap.jpg"))
+            if(last_path is not None):
+                pos = uic.air_match_in(last_path, screen)
+                if(pos is not None):
+                    pos[0] -= last_width * 0.5
+                    pos[1] -= last_height * 0.5
+                print('---------', pos, last_px, last_py)
+            for item in freeze().offspring():
+                attrs = self.getUseableAttrs(item)
+                if(attrs):
+                    width = item.attr('size')[0] * screen_width
+                    height = item.attr('size')[1] * screen_height
+                    anchorX = item.attr('anchorPoint')[0] * width
+                    anchorY = item.attr('anchorPoint')[1] * height
+                    x0 = (item.attr('pos')[0] * screen_width) - anchorX
+                    y0 = (item.attr('pos')[1] * screen_height) - anchorY
+                    path = self.__saveCropScreen(screen, x0, y0, width, height, page, index)
+                    if(path is None):
+                        continue
+                    emt = Elements(item.attr('type'),item.attr('name'), attrs, path)
+                    if emt not in elementsArray:
+                        emt.setPos(x0, y0)
+                        elementsArray.append(emt)
+                        index += 1
+                        newItem += 1
+                    else:
+                        os.remove(path)
+            if(not newItem):
+                break
+            x, y = elementsArray[-1].getPos()
             self.poco.swipe([x/screen_width, y/screen_height], direction=[0,-0.3])
-            index = self._parseFreezeLayout(page, index, emtArray)
